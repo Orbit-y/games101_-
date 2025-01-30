@@ -94,7 +94,7 @@ make
 
 ###### 结果
 
-![image-20250130021147904](C:\Users\26659\AppData\Roaming\Typora\typora-user-images\image-20250130021147904.png)
+![image-20250131001817183](images/image-20250131001817183.png)
 
 
 
@@ -239,13 +239,19 @@ unset GTK_PATH
 
 绕z轴旋转
 
+<img src="images/image-20250131001920167.png" alt="image-20250131001920167" style="zoom: 25%;" />
+
 绕1，0，0旋转
 
-<img src="C:\Users\26659\AppData\Local\Temp\0d01c8b8-4688-49dc-b54d-d10f3c8fac8c.png" alt="0d01c8b8-4688-49dc-b54d-d10f3c8fac8c" style="zoom:33%;" />
+![image-20250131001829340](images/image-20250131001829340.png)
+
+<img src="images/image-20250131001951556.png" alt="image-20250131001951556" style="zoom:25%;" />
 
 绕3，4，5旋转
 
-<img src="C:\Users\26659\AppData\Local\Temp\5ac4ce4a-bf5c-4eb3-91f6-ca59a9d32200.png" alt="5ac4ce4a-bf5c-4eb3-91f6-ca59a9d32200" style="zoom:33%;" />
+<img src="images/image-20250131001838883.png" alt="image-20250131001838883"  />
+
+<img src="images/image-20250131002026840.png" alt="image-20250131002026840" style="zoom:25%;" />
 
 
 
