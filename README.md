@@ -98,7 +98,7 @@ make
 
 
 
-hw1-1
+#### HW1-1
 
 实现控制三角形绕z轴和任意轴旋转
 
@@ -253,9 +253,72 @@ unset GTK_PATH
 
 <img src="images/image-20250131002026840.png" alt="image-20250131002026840" style="zoom:25%;" />
 
+#### HW2
 
+这章感觉就有些难度了，有一些是上课没说到的（说到的还是很好理解，可能有的目前还没看到），主要是涉及到很多其他的方法
 
+慢慢来理解
 
+##### 1.static bool insideTriangle(): 测试点是否在三角形内。
+
+```c++
+static bool insideTriangle(int x, int y, const Vector3f* _v)
+{   
+    // TODO : Implement this function to check if the point (x, y) is inside the triangle represented by _v[0], _v[1], _v[2]
+    bool inTriangle = false;
+    Eigen::Vector3f P = Vector3f(x, y, 1.0);
+    Eigen::Vector3f AB= _v[1]-_v[0];
+    Eigen::Vector3f BC= _v[2]-_v[1];
+    Eigen::Vector3f CA= _v[0]-_v[2];
+
+    Eigen::Vector3f AP= P-_v[0];
+    Eigen::Vector3f BP= P-_v[1];
+    Eigen::Vector3f CP= P-_v[2];
+
+    float z1=AB.cross(AP).z();
+    float z2=BC.cross(BP).z();
+    float z3=CA.cross(CP).z();
+
+    if((z1>0 && z2>0 && z3>0)|| (z1<0 && z2<0 && z3<0)){
+        inTriangle = true;
+    }
+
+    return inTriangle;
+    
+}
+```
+
+`const Vector3f* _v` 是一个指向 `Vector3f` 类型的常量指针，表示一个指向三个 `Vector3f` 类型元素的数组的起始位置。
+
+用指针来实现的连续储存的三角形的三个顶点
+
+A.cross(B)表示的是向量A和B的叉乘(结果也是向量)，如果叉乘的Z值都大于0或者小于0则在三角形的内部
+
+对于两个二维向量 
+$$
+(\mathbf{u} = (u_x, u_y))和(\mathbf{v} = (v_x, v_y))
+$$
+ 
+
+它们的叉积可以表示为：
+$$
+[ \mathbf{u} \times \mathbf{v} = u_x v_y - u_y v_x ]
+$$
+这个结果实际上是一个标量，表示的是这两个向量构成的平行四边形的有符号面积。如果我们将这个结果视为一个三维向量的 z 分量，则其值为：
+$$
+[ (\mathbf{u} \times \mathbf{v})_z = u_x v_y - u_y v_x ]
+$$
+可以发现与u和v的z分量无关
+
+##### 2.rasterize_triangle(): 执行三角形栅格化算法
+
+###### ①创建三角形的 2 维 bounding box。
+
+###### ②遍历此 bounding box 内的所有像素（使用其整数索引）。然后，使用像素中心的屏幕空间坐标来检查中心点是否在三角形内。
+
+###### ③如果在内部，则将其位置处的插值深度值 (interpolated depth value) 与深度缓冲区 (depth buffer) 中的相应值进行比较。
+
+###### ④如果当前点更靠近相机，请设置像素颜色并更新深度缓冲区 (depth buffer)。
 
 
 

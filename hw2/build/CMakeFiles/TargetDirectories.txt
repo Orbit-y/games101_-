@@ -1,0 +1,3 @@
+C:/Users/26659/Desktop/games101_-/hw2/build/CMakeFiles/Rasterizer.dir
+C:/Users/26659/Desktop/games101_-/hw2/build/CMakeFiles/edit_cache.dir
+C:/Users/26659/Desktop/games101_-/hw2/build/CMakeFiles/rebuild_cache.dir
