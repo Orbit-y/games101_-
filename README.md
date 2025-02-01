@@ -98,7 +98,7 @@ make
 
 
 
-#### HW1-1
+#### HW1-1MVP model view Projection
 
 实现控制三角形绕z轴和任意轴旋转
 
@@ -253,7 +253,7 @@ unset GTK_PATH
 
 <img src="images/image-20250131002026840.png" alt="image-20250131002026840" style="zoom:25%;" />
 
-#### HW2
+#### HW2深度测试
 
 这章感觉就有些难度了，有一些是上课没说到的（说到的还是很好理解，可能有的目前还没看到），主要是涉及到很多其他的方法
 
@@ -273,7 +273,7 @@ $$
 $$
      y_{\text{screen}} = \left(\frac{y_{\text{NDC}} + 1}{2}\right) \times \text{height}     
 $$
-   
+
 $$
 z_{\text{screen}} = \left(\frac{z_{\text{NDC}} + 1}{2}\right) \times \text{depth}
 $$
@@ -287,7 +287,7 @@ $$
 $$
      x_{\text{NDC}} = \frac{x_{\text{clip}}}{w_{\text{clip}}}     
 $$
-  
+
 $$
 y_{\text{NDC}} = \frac{y_{\text{clip}}}{w_{\text{clip}}}
 $$
@@ -424,6 +424,8 @@ $$
 这里的 `alpha`, `beta`, 和 `gamma` 就是点 P 的重心坐标，它们分别表示点 P 在三角形内相对于顶点 A, B, C 的权重。
 
 ###### **为什么 `w_reciprocal` 长这样？**
+
+[图形学 - 关于透视矫正插值那些事 - 知乎](https://zhuanlan.zhihu.com/p/403259571)
 
 `w_reciprocal` 的计算公式是为了确保插值后的值在透视变换后仍然是线性的。具体来说：
 
