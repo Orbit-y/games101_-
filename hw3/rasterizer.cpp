@@ -175,8 +175,8 @@ void rst::rasterizer::draw(std::vector<Triangle *> &TriangleList) {
     float f1 = (50 - 0.1) / 2.0;
     float f2 = (50 + 0.1) / 2.0;
 
-    Eigen::Matrix4f mvp = projection * view * model;
-    for (const auto& t:TriangleList)
+    Eigen::Matrix4f mvp = projection * view * model;//模型和视图变换
+    for (const auto& t:TriangleList)//遍历三角形列表中的每一个三角形
     {
         Triangle newtri = *t;
 
@@ -184,26 +184,29 @@ void rst::rasterizer::draw(std::vector<Triangle *> &TriangleList) {
                 (view * model * t->v[0]),
                 (view * model * t->v[1]),
                 (view * model * t->v[2])
-        };
+        };//变换到视图空间
 
-        std::array<Eigen::Vector3f, 3> viewspace_pos;
+        std::array<Eigen::Vector3f, 3> viewspace_pos;  // 提取视图空间坐标中的前三个分量（x, y, z）
 
         std::transform(mm.begin(), mm.end(), viewspace_pos.begin(), [](auto& v) {
             return v.template head<3>();
-        });
+        });// 使用 lambda 表达式将 mm 中的每个向量转换为三维向量并存储在 viewspace_pos 中
 
         Eigen::Vector4f v[] = {
                 mvp * t->v[0],
                 mvp * t->v[1],
                 mvp * t->v[2]
-        };
-        //Homogeneous division
+        };//// 将三角形顶点从模型空间变换到裁剪空间
+
+        // 进行齐次除法，将裁剪空间坐标转换为标准化设备坐标（NDC）
         for (auto& vec : v) {
             vec.x()/=vec.w();
             vec.y()/=vec.w();
             vec.z()/=vec.w();
         }
 
+        // 将三角形法线从模型空间变换到视图空间
+        //https://blog.csdn.net/weixin_43347688/article/details/135440822
         Eigen::Matrix4f inv_trans = (view * model).inverse().transpose();
         Eigen::Vector4f n[] = {
                 inv_trans * to_vec4(t->normal[0], 0.0f),
@@ -211,7 +214,7 @@ void rst::rasterizer::draw(std::vector<Triangle *> &TriangleList) {
                 inv_trans * to_vec4(t->normal[2], 0.0f)
         };
 
-        //Viewport transformation
+        //视口变换，将 NDC 坐标转换为屏幕空间坐标
         for (auto & vert : v)
         {
             vert.x() = 0.5*width*(vert.x()+1.0);
@@ -219,23 +222,26 @@ void rst::rasterizer::draw(std::vector<Triangle *> &TriangleList) {
             vert.z() = vert.z() * f1 + f2;
         }
 
+        // 设置新的三角形顶点为屏幕空间坐标
         for (int i = 0; i < 3; ++i)
         {
             //screen space coordinates
             newtri.setVertex(i, v[i]);
         }
 
+        // 设置新的三角形法线为视图空间法线
         for (int i = 0; i < 3; ++i)
         {
             //view space normal
             newtri.setNormal(i, n[i].head<3>());
         }
 
+        //设置三角形颜色
         newtri.setColor(0, 148,121.0,92.0);
         newtri.setColor(1, 148,121.0,92.0);
         newtri.setColor(2, 148,121.0,92.0);
 
-        // Also pass view space vertice position
+         // 光栅化三角形，并传递视图空间顶点位置
         rasterize_triangle(newtri, viewspace_pos);
     }
 }

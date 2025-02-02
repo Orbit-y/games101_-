@@ -498,7 +498,7 @@ for (int x = (int)min_x; x < max_x; x++) {
 }
 ```
 
-```
+```c++
 void rst::rasterizer::msaa_pixel(const Eigen::Vector3f& point, const Eigen::Vector3f& color)
 {
     // 计算像素在帧缓冲区中的索引
@@ -517,7 +517,7 @@ void rst::rasterizer::msaa_pixel(const Eigen::Vector3f& point, const Eigen::Vect
 
 `rst::rasterizer::rasterizer(int w, int h)` 构造函数的主要作用是初始化和构造缓冲区，包括帧缓冲区（`frame_buf`）、深度缓冲区（`depth_buf`）和多采样抗锯齿（MSAA）深度缓冲区（`depth_buf_msaa22`）。
 
-```
+```c++
 rst::rasterizer::rasterizer(int w, int h) : width(w), height(h)
 {
     // 初始化宽度和高度
@@ -549,7 +549,7 @@ rst::rasterizer::rasterizer(int w, int h) : width(w), height(h)
 
 MSAA 深度缓冲区 (`depth_buf_msaa22`)：如果 `buff` 包含 `rst::Buffers::Depth` 标志，则将所有子像素的深度值设置为正无穷大。
 
-```
+```c++
 void rst::rasterizer::clear(rst::Buffers buff)
 {
     // 检查是否需要清除颜色缓冲区
@@ -590,3 +590,419 @@ width * 2`：由于每个像素被划分为 2x2 的子像素，因此宽度需�
 $$
 [ \text{frame_buf}[ind] = \text{color1} + \text{color2} + \text{color3} + \text{color4} ]
 $$
+
+#### HW3法向量、纹理颜色、颜色插值
+
+##### task1:插值算法
+
+修改函数 rasterize_triangle(const Triangle& t) in rasterizer.cpp: 在此 处实现与作业 2 类似的插值算法，实现法向量、颜色、纹理颜色的插值。
+
+###### 先看下画三角形的代码
+
+```c++
+void rst::rasterizer::draw(std::vector<Triangle *> &TriangleList) {
+
+    float f1 = (50 - 0.1) / 2.0;
+    float f2 = (50 + 0.1) / 2.0;
+
+    Eigen::Matrix4f mvp = projection * view * model;//模型和视图变换
+    for (const auto& t:TriangleList)//遍历三角形列表中的每一个三角形
+    {
+        Triangle newtri = *t;
+
+        std::array<Eigen::Vector4f, 3> mm {
+                (view * model * t->v[0]),
+                (view * model * t->v[1]),
+                (view * model * t->v[2])
+        };//变换到视图空间
+
+        std::array<Eigen::Vector3f, 3> viewspace_pos;  // 提取视图空间坐标中的前三个分量（x, y, z）
+
+        std::transform(mm.begin(), mm.end(), viewspace_pos.begin(), [](auto& v) {
+            return v.template head<3>();
+        });// 使用 lambda 表达式将 mm 中的每个向量转换为三维向量并存储在 viewspace_pos 中
+
+        Eigen::Vector4f v[] = {
+                mvp * t->v[0],
+                mvp * t->v[1],
+                mvp * t->v[2]
+        };//// 将三角形顶点从模型空间变换到裁剪空间
+
+        // 进行齐次除法，将裁剪空间坐标转换为标准化设备坐标（NDC）
+        for (auto& vec : v) {
+            vec.x()/=vec.w();
+            vec.y()/=vec.w();
+            vec.z()/=vec.w();
+        }
+
+        // 将三角形法线从模型空间变换到视图空间
+        //https://blog.csdn.net/weixin_43347688/article/details/135440822
+        Eigen::Matrix4f inv_trans = (view * model).inverse().transpose();
+        Eigen::Vector4f n[] = {
+                inv_trans * to_vec4(t->normal[0], 0.0f),
+                inv_trans * to_vec4(t->normal[1], 0.0f),
+                inv_trans * to_vec4(t->normal[2], 0.0f)
+        };
+
+        //视口变换，将 NDC 坐标转换为屏幕空间坐标
+        for (auto & vert : v)
+        {
+            vert.x() = 0.5*width*(vert.x()+1.0);
+            vert.y() = 0.5*height*(vert.y()+1.0);
+            vert.z() = vert.z() * f1 + f2;
+        }
+
+        // 设置新的三角形顶点为屏幕空间坐标
+        for (int i = 0; i < 3; ++i)
+        {
+            //screen space coordinates
+            newtri.setVertex(i, v[i]);
+        }
+
+        // 设置新的三角形法线为视图空间法线
+        for (int i = 0; i < 3; ++i)
+        {
+            //view space normal
+            newtri.setNormal(i, n[i].head<3>());
+        }
+
+        //设置三角形颜色
+        newtri.setColor(0, 148,121.0,92.0);
+        newtri.setColor(1, 148,121.0,92.0);
+        newtri.setColor(2, 148,121.0,92.0);
+
+         // 光栅化三角形，并传递视图空间顶点位置
+        rasterize_triangle(newtri, viewspace_pos);
+    }
+}
+```
+
+###### 再研究下三角形类class Triangle
+
+```c++
+class Triangle {
+public:
+    Vector4f v[3]; /* 三角形的原始坐标，v0, v1, v2 按逆时针顺序排列 */
+/* 每个顶点的属性 */
+Vector3f color[3]; // 每个顶点的颜色
+Vector2f tex_coords[3]; // 每个顶点的纹理坐标 (u, v)
+Vector3f normal[3]; // 每个顶点的法线向量
+
+Texture *tex = nullptr; // 纹理指针，默认为空
+
+Triangle(); // 默认构造函数
+
+Eigen::Vector4f a() const { return v[0]; } // 获取第一个顶点坐标
+Eigen::Vector4f b() const { return v[1]; } // 获取第二个顶点坐标
+Eigen::Vector4f c() const { return v[2]; } // 获取第三个顶点坐标
+
+void setVertex(int ind, Vector4f ver); /* 设置第 i 个顶点的坐标 */
+void setNormal(int ind, Vector3f n); /* 设置第 i 个顶点的法线向量 */
+void setColor(int ind, float r, float g, float b); /* 设置第 i 个顶点的颜色 */
+
+void setNormals(const std::array<Vector3f, 3>& normals); // 批量设置所有顶点的法线向量
+void setColors(const std::array<Vector3f, 3>& colors); // 批量设置所有顶点的颜色
+void setTexCoord(int ind, Vector2f uv); /* 设置第 i 个顶点的纹理坐标 */
+
+std::array<Vector4f, 3> toVector4() const; // 将三角形顶点转换为 Vector4f 数组
+};
+```
+###### 还要研究下着色器结构体
+
+- ***\*Fragment Shader Payload（片段着色器载荷）\****：这是指在图形渲染过程中，传递给片段着色器的数据集合。这些数据包括顶点着色器输出的数据，以及可能由几何着色器或其它管线阶段产生的数据。片段着色器使用这些数据来计算最终像素的颜色和深度值等信息。
+
+```c++
+// 片段着色器负载结构体，用于存储片段着色器所需的各种信息
+struct fragment_shader_payload
+{
+    // 默认构造函数：将纹理指针初始化为nullptr
+    fragment_shader_payload()
+    {
+        texture = nullptr;
+    }
+
+    // 带参数的构造函数：接受颜色、法线、纹理坐标和纹理指针进行初始化
+    fragment_shader_payload(const Eigen::Vector3f& col, const Eigen::Vector3f& nor,
+                            const Eigen::Vector2f& tc, Texture* tex) :
+        color(col), normal(nor), tex_coords(tc), texture(tex) {}
+
+    Eigen::Vector3f view_pos;  // 视图空间中的顶点位置
+    Eigen::Vector3f color;     // 顶点颜色
+    Eigen::Vector3f normal;    // 顶点法线
+    Eigen::Vector2f tex_coords;// 纹理坐标
+    Texture* texture;          // 纹理指针
+};
+```
+
+###### 然后我们就可以看作业要补充的代码了
+
+```c++
+void rst::rasterizer::rasterize_triangle(const Triangle& t, const std::array<Eigen::Vector3f, 3>& view_pos)   //三角形对象和视图空间坐标（视图空间指的是经过模型变换和视图变换得到的空间)
+{
+    auto v = t.toVector4();
+    int min_x = std::min(std::min(v[0].x(), v[1].x()), v[2].x());
+    int max_x = std::max(std::max(v[0].x(), v[1].x()), v[2].x());
+    int min_y = std::min(std::min(v[0].y(), v[1].y()), v[2].y());
+    int max_y = std::max(std::max(v[0].y(), v[1].y()), v[2].y()); 
+    //找到需要检查的那个区域bounding box好像叫这个
+    for (int x =int (min_x); x <= max_x; x++)
+    {
+        for (int y = int (min_y); y <= max_y; y++)
+        {//遍历box中的像素
+            if(insideTriangle(x+0.5, y+0.5, t.v))
+            {//如果像素的中心在三角形中
+                auto[alpha, beta, gamma] = computeBarycentric2D(x+0.5, y+0.5, t.v);//得到重心坐标
+                float Z = 1.0 / (alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
+                float zp = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
+                zp *= Z;//深度插值
+
+                if(zp < depth_buf[get_index(x, y)]){//如果深度小于zbuffer，表示离摄像头更近
+                depth_buf[get_index(x, y)] = zp;
+                //插值的实现
+                auto interpolated_color = interpolate(alpha, beta, gamma, t.color[0], t.color[1], t.color[2], 1);//颜色插值
+                auto interpolated_normal = interpolate(alpha, beta, gamma, t.normal[0], t.normal[1], t.normal[2], 1).normalized();//法线插值
+                auto interpolated_shadingcoords = interpolate(alpha, beta, gamma, view_pos[0], view_pos[1], view_pos[2], 1);//纹理坐标
+                auto interpolated_texcoords = interpolate(alpha, beta, gamma, t.tex_coords[0], t.tex_coords[1], t.tex_coords[2], 1);//纹理指针
+                
+
+                //调用片段着色器：创建 fragment_shader_payload 对象并传递插值得到的属性，调用片段着色器获取最终颜色。
+                fragment_shader_payload pay_load(interpolated_color, interpolated_normal.normalized(), interpolated_texcoords, t.tex);
+                pay_load.view_pos = interpolated_shadingcoords;
+                auto pixel_color = fragment_shader(pay_load);
+                set_pixel(Vector2i(x, y), pixel_color);
+                }
+            }
+        }
+    }
+}
+```
+
+todo: msaa补充
+
+##### task2: get_projection_matrix() 复制之前的
+
+修改函数 get_projection_matrix() in main.cpp: 将你自己在之前的实验中 实现的投影矩阵填到此处，此时你可以运行 ./Rasterizer output.png normal 来观察法向量实现结果。
+
+这里发现作业2里面有个方向错了，因为在作业2中z的值被默认取正了，所以要修改以下函数中的
+
+```c++
+Eigen::Matrix4f get_projection_matrix(float eye_fov, float aspect_ratio, float zNear, float zFar)
+```
+
+```c++
+    //scale
+	......
+    ortho1(2,2)=2/(-zNear+zFar);
+```
+
+##### task3:Blinn-Phong 模型计算 Fragment Color.
+
+修改函数 phong_fragment_shader() in main.cpp: 实现 Blinn-Phong 模型计算 Fragment Color.
+
+这个好像比较简单
+
+```c++
+Eigen::Vector3f phong_fragment_shader(const fragment_shader_payload& payload)
+{
+    Eigen::Vector3f ka = Eigen::Vector3f(0.005, 0.005, 0.005);//ambient
+    Eigen::Vector3f kd = payload.color;//diffuse
+    Eigen::Vector3f ks = Eigen::Vector3f(0.7937, 0.7937, 0.7937);//specular
+
+    auto l1 = light{{20, 20, 20}, {500, 500, 500}};
+    auto l2 = light{{-20, 20, 0}, {500, 500, 500}};
+
+    std::vector<light> lights = {l1, l2};
+    Eigen::Vector3f amb_light_intensity{10, 10, 10};//环境光
+    Eigen::Vector3f eye_pos{0, 0, 10};
+
+    float p = 150;
+
+    Eigen::Vector3f color = payload.color;
+    Eigen::Vector3f point = payload.view_pos;
+    Eigen::Vector3f normal = payload.normal;
+
+    Eigen::Vector3f result_color = {0, 0, 0};
+    for (auto& light : lights)
+    {
+        // TODO: For each light source in the code, calculate what the *ambient*, *diffuse*, and *specular* 
+        // components are. Then, accumulate that result on the *result_color* object.
+        Eigen::Vector3f light_pos = light.position - point;
+        Eigen::Vector3f sight_pos = eye_pos - point;
+
+        float r = light_pos.dot(light_pos);
+        Eigen::Vector3f h= (light_pos.normalized() + sight_pos.normalized()).normalized();
+
+        Eigen::Vector3f ambient = ka.cwiseProduct(amb_light_intensity);
+        Eigen::Vector3f diffuse = kd.cwiseProduct(light.intensity/r)*std::max(0.0f,normal.dot(light_pos.normalized()));
+        Eigen::Vector3f specular = ks.cwiseProduct(light.intensity/r)*std::pow(std::max(0.0f,normal.dot(h)),p);
+        
+        result_color+=ambient+diffuse+specular;
+    }
+
+    return result_color * 255.f;
+}
+```
+
+注意的是在计算半程向量和反射的时候需要用单位向量.normalized()，然后在task1实现的函数中注意到我们也在传递参数的时候把payload.normal给归一化了
+
+##### task4:Texture Shading Fragment Shader
+
+修改函数 texture_fragment_shader() in main.cpp: 在实现 Blinn-Phong 的基础上，将纹理颜色视为公式中的 kd，实现 Texture Shading Fragment Shader.
+
+```c++
+   if (payload.texture)
+    {
+        // TODO: Get the texture value at the texture coordinates of the current fragment
+        return_color = payload.texture->getColor(payload.tex_coords.x(), payload.tex_coords.y());
+
+    }
+    ....
+     Eigen::Vector3f kd = texture_color / 255.f;
+    ....
+```
+
+从原理上来说只要把漫反射的系数改成纹理的颜色（？）
+
+代码框架中已经为我们写好了getcolor函数，只用调用就行了
+
+不过我们还是来研究下getcolor怎么实现，也就是看下texture类，注意要保证该函数首先确保纹理坐标(u, v)在有效范围内，即[0, 1]
+
+`v_img` 和 `u_img` 是根据纹理坐标 `u` 和 `v` 计算出的图像中的像素位置，`image_data` 是存储图像像素数据的矩阵。通过 `at<cv::Vec3b>(v_img, u_img)` 方法获取该位置的像素颜色，颜色值以 `cv::Vec3b` 类型返回，表示蓝色、绿色和红色三个通道的值。
+
+`at` 是 OpenCV 库中用于访问 `cv::Mat` 对象中特定位置元素的方法。具体来说，`image_data.at<cv::Vec3b>(v_img, u_img)` 用于获取图像中指定像素位置的色彩值。 - `cv::Mat` 是 OpenCV 中用来存储图像数据的类。 - `cv::Vec3b` 表示一个包含三个无符号字符（即三个字节）的向量，通常用于表示 BGR 格式的颜色值（蓝色、绿色、红色）。 
+
+**`at` 方法的作用**：  - `at` 方法允许你通过指定行和列索引来访问 `cv::Mat` 中的元素。  - 在代码中`image_data.at<cv::Vec3b>(v_img, u_img)` 返回的是位于 `(v_img, u_img)` 位置的像素的颜色值，该颜色值是一个 `cv::Vec3b` 类型的对象，包含三个分量：B（蓝色）、G（绿色）、R（红色）。 - **参数说明**：  - `v_img` 和 `u_img` 分别是图像的行和列索引，对应于纹理坐标 `(u, v)` 转换后的图像坐标。 ### 示例： 假设 `image_data` 是一个 BGR 图像，`v_img = 100` 和 `u_img = 200`，那么 `image_data.at<cv::Vec3b>(100, 200)` 将返回一个 `cv::Vec3b` 对象，表示图像中第 100 行、第 200 列像素的颜色值。  如果提供的索引超出图像边界，`at` 方法会抛出异常。已经通过条件语句确保了 `u` 和 `v` 的值在 `[0, 1]` 范围内，从而保证转换后的 `u_img` 和 `v_img` 不会越界。
+
+```c++
+
+// 定义一个纹理类，用于处理和存储图像数据
+class Texture{
+private:
+    cv::Mat image_data; // 存储图像数据的变量
+
+public:
+    // 构造函数：初始化纹理对象并加载图像
+    // 参数 name: 图像文件的路径
+    Texture(const std::string& name)
+    {
+        image_data = cv::imread(name); // 读取图像文件
+        cv::cvtColor(image_data, image_data, cv::COLOR_RGB2BGR); // 转换图像颜色空间从RGB到BGR
+        width = image_data.cols; // 获取并存储图像的宽度
+        height = image_data.rows; // 获取并存储图像的高度
+    }
+
+    int width, height; // 图像的宽度和高度
+
+    // 根据纹理坐标获取颜色
+    // 参数 u, v: 纹理坐标，范围在[0, 1]之间
+    // 返回值：对应纹理坐标的颜色向量
+    Eigen::Vector3f getColor(float u, float v)
+    {
+        // 确保纹理坐标在有效范围内
+        if (u < 0)u = 0;
+        if (u > 1)u = 1;
+        if (v < 0)v = 0;
+        if (v > 1)v = 1;
+
+        // 将纹理坐标转换为图像坐标
+        auto u_img = u * width;
+        auto v_img = (1 - v) * height;
+
+        // 从图像数据中获取颜色
+        auto color = image_data.at<cv::Vec3b>(v_img, u_img);
+
+        // 返回颜色向量
+        return Eigen::Vector3f(color[0], color[1], color[2]);
+    }
+
+};
+
+```
+
+##### tast5：Bump mapping 凹凸映射
+
+先看代码
+
+```c++
+Eigen::Vector3f bump_fragment_shader(const fragment_shader_payload& payload)
+{
+    // 定义环境光系数 ka，漫反射系数 kd（取自 payload 的颜色），镜面反射系数 ks
+    Eigen::Vector3f ka = Eigen::Vector3f(0.005, 0.005, 0.005);
+    Eigen::Vector3f kd = payload.color;
+    Eigen::Vector3f ks = Eigen::Vector3f(0.7937, 0.7937, 0.7937);
+
+    // 定义两个光源 l1 和 l2，分别位于 (20, 20, 20) 和 (-20, 20, 0)，光强为 (500, 500, 500)
+    auto l1 = light{{20, 20, 20}, {500, 500, 500}};
+    auto l2 = light{{-20, 20, 0}, {500, 500, 500}};
+
+    // 将光源放入光源列表
+    std::vector<light> lights = {l1, l2};
+    // 定义环境光强度
+    Eigen::Vector3f amb_light_intensity{10, 10, 10};
+    // 定义观察者位置
+    Eigen::Vector3f eye_pos{0, 0, 10};
+
+    // 定义镜面反射的指数 p
+    float p = 150;
+
+    // 从 payload 中获取颜色、视点位置和法线
+    Eigen::Vector3f color = payload.color; 
+    Eigen::Vector3f point = payload.view_pos;
+    Eigen::Vector3f normal = payload.normal;
+
+    // 定义凹凸映射的参数 kh 和 kn
+    float kh = 0.2, kn = 0.1;
+
+    // 计算切向量 t 和副法向量 b
+    float x = normal.x(), y = normal.y(), z = normal.z();
+    Eigen::Vector3f t, b;
+    t << x * y / std::sqrt(x * x + z * z), std::sqrt(x * x + z * z), z * y / std::sqrt(x * x + z * z);
+    b = normal.cross(t);
+
+    // 构建 TBN 矩阵，用于将法线从切线空间转换到世界空间
+    Eigen::Matrix3f TBN;
+    TBN << t.x(), b.x(), normal.x(),
+           t.y(), b.y(), normal.y(),
+           t.z(), b.z(), normal.z();
+
+    // 获取纹理坐标和纹理的宽度、高度
+    float u = payload.tex_coords.x(), v = payload.tex_coords.y();
+    float w = payload.texture->width, h = payload.texture->height;
+
+    // 计算纹理坐标 u 和 v 方向上的偏移量 dU 和 dV
+    float dU = kh * kn * (payload.texture->getColor(u + 1.0 / w, v).norm() - payload.texture->getColor(u, v).norm());
+    float dV = kh * kn * (payload.texture->getColor(u, v + 1.0 / h).norm() - payload.texture->getColor(u, v).norm());
+    
+    // 计算新的法线向量 ln
+    Eigen::Vector3f ln;
+    ln << -dU, -dV, 1;
+
+    // 将法线从切线空间转换到世界空间，并归一化
+    normal = (TBN * ln).normalized();
+
+    // 初始化结果颜色为 (0, 0, 0)
+    Eigen::Vector3f result_color = {0, 0, 0};
+    // 将法线作为颜色输出（用于调试或可视化法线）
+    result_color = normal;
+
+    // 返回结果颜色，乘以 255 以将颜色值从 [0, 1] 转换到 [0, 255]
+    return result_color * 255.f;
+}
+```
+
+具体还有些地方没懂--，有机会补上
+
+可以看看下面的博客
+
+[GAMES101 作业 3: Pipeline and Shading【渲染管线与着色】-CSDN博客](https://blog.csdn.net/2301_79799657/article/details/143991642)
+
+##### task6：displacement mapping.
+
+```c++
+point += kn*normal*payload.texture->getColor(u,v).norm();
+```
+
+只多了一行，待补充吧
+
+
+
